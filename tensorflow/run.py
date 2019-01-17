@@ -30,6 +30,7 @@ import logging
 from dataset import BRCDataset
 from vocab import Vocab
 from rc_model import RCModel
+from verified_rc_model import VerifiedRCModel
 
 
 def parse_args():
@@ -65,6 +66,8 @@ def parse_args():
     model_settings = parser.add_argument_group('model settings')
     model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
                                 help='choose the algorithm to use')
+    model_settings.add_argument('--verify', action='store_true',
+                                help='train the model')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
     model_settings.add_argument('--hidden_size', type=int, default=150,
@@ -152,7 +155,10 @@ def train(args):
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
     logger.info('Initialize the model...')
-    rc_model = RCModel(vocab, args)
+    if args.verify:
+        rc_model = VerifiedRCModel(vocab, args)
+    else:
+        rc_model = RCModel(vocab, args)
     logger.info('Training the model...')
     rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
                    save_prefix=args.algo,
@@ -173,7 +179,10 @@ def evaluate(args):
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
     logger.info('Restoring the model...')
-    rc_model = RCModel(vocab, args)
+    if args.verify:
+        rc_model = VerifiedRCModel(vocab, args)
+    else:
+        rc_model = RCModel(vocab, args)
     rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo)
     logger.info('Evaluating the model on dev set...')
     dev_batches = brc_data.gen_mini_batches('dev', args.batch_size,
@@ -199,7 +208,10 @@ def predict(args):
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
     logger.info('Restoring the model...')
-    rc_model = RCModel(vocab, args)
+    if args.verify:
+        rc_model = VerifiedRCModel(vocab, args)
+    else:
+        rc_model = RCModel(vocab, args)
     rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo)
     logger.info('Predicting answers for test set...')
     test_batches = brc_data.gen_mini_batches('test', args.batch_size,

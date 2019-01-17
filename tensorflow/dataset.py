@@ -67,6 +67,8 @@ class BRCDataset(object):
                         continue
                     if sample['answer_spans'][0][1] >= self.max_p_len:
                         continue
+                    if 'answer_docs' not in sample or sample['answer_docs'][0] >= self.max_p_num:
+                        continue
 
                 if 'answer_docs' in sample:
                     sample['answer_passages'] = sample['answer_docs']
@@ -116,10 +118,13 @@ class BRCDataset(object):
                       'passage_token_ids': [],
                       'passage_length': [],
                       'start_id': [],
-                      'end_id': []}
+                      'end_id': [],
+                      'ans_para_id': [],
+                      'passage_number': []}
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
         max_passage_num = min(self.max_p_num, max_passage_num)
         for sidx, sample in enumerate(batch_data['raw_data']):
+            batch_data['passage_number'].append(min(max_passage_num, len(sample['passages'])))
             for pidx in range(max_passage_num):
                 if pidx < len(sample['passages']):
                     batch_data['question_token_ids'].append(sample['question_token_ids'])
@@ -138,10 +143,12 @@ class BRCDataset(object):
                 gold_passage_offset = padded_p_len * sample['answer_passages'][0]
                 batch_data['start_id'].append(gold_passage_offset + sample['answer_spans'][0][0])
                 batch_data['end_id'].append(gold_passage_offset + sample['answer_spans'][0][1])
+                batch_data['ans_para_id'].append(sample['answer_passages'][0])
             else:
                 # fake span for some samples, only valid for testing
                 batch_data['start_id'].append(0)
                 batch_data['end_id'].append(0)
+                batch_data['ans_para_id'].append(0)
         return batch_data
 
     def _dynamic_padding(self, batch_data, pad_id):
