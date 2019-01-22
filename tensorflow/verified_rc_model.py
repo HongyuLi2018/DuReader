@@ -40,6 +40,42 @@ from rc_model import RCModel
 
 class VerifiedRCModel(RCModel):
     """Basic models with passage verification"""
+    def __init__(self, vocab, args):
+
+        # logging
+        self.logger = logging.getLogger("brc")
+
+        # basic config
+        self.algo = args.algo
+        self.hidden_size = args.hidden_size
+        self.optim_type = args.optim
+        self.learning_rate = args.learning_rate
+        self.weight_decay = args.weight_decay
+        self.use_dropout = args.dropout_keep_prob < 1
+        self.beta = args.beta
+
+        # length limit
+        self.max_p_num = args.max_p_num
+        self.max_p_len = args.max_p_len
+        self.max_q_len = args.max_q_len
+        self.max_a_len = args.max_a_len
+
+        # the vocab
+        self.vocab = vocab
+
+        # session info
+        sess_config = tf.ConfigProto()
+        sess_config.gpu_options.allow_growth = True
+        self.sess = tf.Session(config=sess_config)
+
+        self._build_graph()
+
+        # save info
+        self.saver = tf.train.Saver()
+
+        # initialize the model
+        self.sess.run(tf.global_variables_initializer())
+
     def _build_graph(self):
         """
         Builds the computation graph with Tensorflow
@@ -94,10 +130,12 @@ class VerifiedRCModel(RCModel):
             #TODO: add mask in the similarity matrix
             ans_sim_mat = tf.matmul(reshaped_psgs, reshaped_psgs, transpose_b=True)
             ans_sim_mat *= (1 - tf.expand_dims(tf.eye(tf.shape(ans_sim_mat)[1]), 0))
+            # ans_sim_mat = tf.nn.dropout(ans_sim_mat, self.dropout_keep_prob)
             collected_ans_evid_rep = tf.matmul(ans_sim_mat, reshaped_psgs)
             concat_psgs = tf.concat(
                 [reshaped_psgs, collected_ans_evid_rep, reshaped_psgs * collected_ans_evid_rep], -1
             )
+            concat_psgs = tf.nn.dropout(concat_psgs, self.dropout_keep_prob)
             self.ans_verif_logit = func.dense(concat_psgs, 1, True, scope="v0")
 
             self.reshaped_ans_verif_logit = tf.reshape(
@@ -139,7 +177,7 @@ class VerifiedRCModel(RCModel):
             probs=self.reshaped_ans_verif_score, labels=self.para_label
         )
         self.verify_loss = tf.reduce_sum(verify_losses)
-        self.loss = self.boundary_loss + self.verify_loss
+        self.loss = self.boundary_loss + self.beta * self.verify_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
