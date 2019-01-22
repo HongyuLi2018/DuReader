@@ -84,21 +84,10 @@ class BRCDataset(object):
                              'is_selected': doc['is_selected']}
                         )
                     else:
-                        para_infos = []
-                        for para_tokens in doc['segmented_paragraphs']:
-                            question_tokens = sample['segmented_question']
-                            common_with_question = Counter(para_tokens) & Counter(question_tokens)
-                            correct_preds = sum(common_with_question.values())
-                            if correct_preds == 0:
-                                recall_wrt_question = 0
-                            else:
-                                recall_wrt_question = float(correct_preds) / len(question_tokens)
-                            para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
-                        para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        fake_passage_tokens = []
-                        for para_info in para_infos[:1]:
-                            fake_passage_tokens += para_info[0]
-                        sample['passages'].append({'passage_tokens': fake_passage_tokens})
+                        most_related_para = doc['most_related_para']
+                        sample['passages'].append(
+                            {'passage_tokens': doc['segmented_paragraphs'][most_related_para]}
+                        )
                 data_set.append(sample)
         return data_set
 
