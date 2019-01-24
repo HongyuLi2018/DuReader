@@ -41,40 +41,8 @@ from rc_model import RCModel
 class VerifiedRCModel(RCModel):
     """Basic models with passage verification"""
     def __init__(self, vocab, args):
-
-        # logging
-        self.logger = logging.getLogger("brc")
-
-        # basic config
-        self.algo = args.algo
-        self.hidden_size = args.hidden_size
-        self.optim_type = args.optim
-        self.learning_rate = args.learning_rate
-        self.weight_decay = args.weight_decay
-        self.use_dropout = args.dropout_keep_prob < 1
         self.beta = args.beta
-
-        # length limit
-        self.max_p_num = args.max_p_num
-        self.max_p_len = args.max_p_len
-        self.max_q_len = args.max_q_len
-        self.max_a_len = args.max_a_len
-
-        # the vocab
-        self.vocab = vocab
-
-        # session info
-        sess_config = tf.ConfigProto()
-        sess_config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=sess_config)
-
-        self._build_graph()
-
-        # save info
-        self.saver = tf.train.Saver()
-
-        # initialize the model
-        self.sess.run(tf.global_variables_initializer())
+        super(VerifiedRCModel, self).__init__(vocab, args)
 
     def _build_graph(self):
         """
