@@ -95,15 +95,18 @@ class VerifiedRCModel(RCModel):
             reshaped_psgs = tf.reshape(
                 psgs, [tf.shape(self.start_label)[0], -1, psgs.shape[-1].value]
             )
-            #TODO: add mask in the similarity matrix
             ans_sim_mat = tf.matmul(reshaped_psgs, reshaped_psgs, transpose_b=True)
             ans_sim_mat *= (1 - tf.expand_dims(tf.eye(tf.shape(ans_sim_mat)[1]), 0))
+            ans_sim_mat += tf.expand_dims((1.0 - self.pp_mask) * (-1e9), 1)
+            ans_sim_mat += tf.expand_dims((1.0 - self.pp_mask) * (-1e9), 2)
+            ans_sim_mat = tf.nn.softmax(ans_sim_mat, -1)
             # ans_sim_mat = tf.nn.dropout(ans_sim_mat, self.dropout_keep_prob)
             collected_ans_evid_rep = tf.matmul(ans_sim_mat, reshaped_psgs)
             concat_psgs = tf.concat(
                 [reshaped_psgs, collected_ans_evid_rep, reshaped_psgs * collected_ans_evid_rep], -1
             )
-            concat_psgs = tf.nn.dropout(concat_psgs, self.dropout_keep_prob)
+            if self.use_dropout:
+                concat_psgs = tf.nn.dropout(concat_psgs, self.dropout_keep_prob)
             self.ans_verif_logit = func.dense(concat_psgs, 1, True, scope="v0")
 
             self.reshaped_ans_verif_logit = tf.reshape(
