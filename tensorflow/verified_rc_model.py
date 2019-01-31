@@ -92,29 +92,16 @@ class VerifiedRCModel(RCModel):
                 match, d, mask=self.p_mask, init=init, keep_prob=self.dropout_keep_prob,
                 is_train=self.use_dropout, scope="summ2"
             )
-            reshaped_psgs = tf.reshape(
+            psgs = tf.reshape(
                 psgs, [tf.shape(self.start_label)[0], -1, psgs.shape[-1].value]
             )
-            ans_sim_mat = tf.matmul(reshaped_psgs, reshaped_psgs, transpose_b=True)
-            ans_sim_mat *= (1 - tf.expand_dims(tf.eye(tf.shape(ans_sim_mat)[1]), 0))
-            ans_sim_mat += tf.expand_dims((1.0 - self.pp_mask) * (-1e9), 1)
-            ans_sim_mat += tf.expand_dims((1.0 - self.pp_mask) * (-1e9), 2)
-            ans_sim_mat = tf.nn.softmax(ans_sim_mat, -1)
-            # ans_sim_mat = tf.nn.dropout(ans_sim_mat, self.dropout_keep_prob)
-            collected_ans_evid_rep = tf.matmul(ans_sim_mat, reshaped_psgs)
-            concat_psgs = tf.concat(
-                [reshaped_psgs, collected_ans_evid_rep, reshaped_psgs * collected_ans_evid_rep], -1
-            )
-            if self.use_dropout:
-                concat_psgs = tf.nn.dropout(concat_psgs, self.dropout_keep_prob)
-            self.ans_verif_logit = func.dense(concat_psgs, 1, True, scope="v0")
-
+            psgs = func.dense(psgs, 1, True, scope="v0")
             self.reshaped_ans_verif_logit = tf.reshape(
-                self.ans_verif_logit, [tf.shape(self.start_label)[0], -1]
+                psgs, [tf.shape(self.start_label)[0], -1]
             )
             self.reshaped_ans_verif_logit += (1. - self.pp_mask) * (-1e9)
-            self.reshaped_ans_verif_score = tf.nn.softmax(self.reshaped_ans_verif_logit, 1)
-            # self.reshaped_ans_verif_score = tf.nn.sigmoid(self.reshaped_ans_verif_logit)
+            # self.reshaped_ans_verif_score = tf.nn.softmax(self.reshaped_ans_verif_logit, 1)
+            self.reshaped_ans_verif_score = tf.nn.sigmoid(self.reshaped_ans_verif_logit)
 
     def _compute_loss(self):
         """
@@ -130,24 +117,22 @@ class VerifiedRCModel(RCModel):
                 losses = - tf.reduce_sum(labels * tf.log(probs + epsilon), 1)
             return losses
 
-        # def get_verify_loss(probs, labels, mask, epsilon=1e-9, scope=None):
-        #     """cross entropy loss"""
-        #     with tf.name_scope(scope, "log_loss"):
-        #         labels = tf.one_hot(labels, tf.shape(probs)[1])
-        #         labels = tf.reduce_sum(labels, reduction_indices=1)
-        #         all_losses = labels * tf.log(probs + epsilon) + (1 - labels) * tf.log(1 - probs + epsilon)
-        #         all_losses *= mask
-        #         losses = - tf.reduce_sum(all_losses, -1) / (tf.reduce_sum(mask, -1) + epsilon)
-        #     return losses
+        def ce_loss(probs, labels, mask, epsilon=1e-9, scope=None):
+            """cross entropy loss"""
+            with tf.name_scope(scope, "log_loss"):
+                labels = tf.one_hot(labels, tf.shape(probs)[1])
+                all_losses = labels * tf.log(probs + epsilon) + (1 - labels) * tf.log(1 - probs + epsilon)
+                all_losses *= mask
+                losses = - tf.reduce_sum(all_losses, -1) / (tf.reduce_sum(mask, -1) + epsilon)
+            return losses
 
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
         self.all_params = tf.trainable_variables()
         self.boundary_loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
-        verify_losses = sparse_nll_loss(
-            probs=self.reshaped_ans_verif_score, labels=self.para_label
+        self.verify_loss = tf.reduce_mean(
+            ce_loss(self.reshaped_ans_verif_score, self.para_label, self.pp_mask)
         )
-        self.verify_loss = tf.reduce_sum(verify_losses)
         self.loss = self.boundary_loss + self.beta * self.verify_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
