@@ -231,7 +231,7 @@ def validation(inference_program, avg_cost, s_probs, e_probs, match, feed_order,
     ]
     val_feeder = fluid.DataFeeder(val_feed_list, place)
     pad_id = vocab.get_id(vocab.pad_token)
-    dev_reader = lambda:brc_data.gen_mini_batches('dev', args.batch_size, pad_id, shuffle=False)
+    dev_reader = lambda:brc_data.gen_mini_batches('dev', args.batch_size, pad_id, vocab, shuffle=False)
     dev_reader = read_multiple(dev_reader, dev_count)
 
     for batch_id, batch_list in enumerate(dev_reader(), 1):
@@ -416,9 +416,9 @@ def train(logger, args):
                 pass_start_time = time.time()
                 pad_id = vocab.get_id(vocab.pad_token)
                 if args.enable_ce:
-                    train_reader = lambda:brc_data.gen_mini_batches('train', args.batch_size, pad_id, shuffle=False)
+                    train_reader = lambda:brc_data.gen_mini_batches('train', args.batch_size, pad_id, vocab, shuffle=False)
                 else:
-                    train_reader = lambda:brc_data.gen_mini_batches('train', args.batch_size, pad_id, shuffle=True)
+                    train_reader = lambda:brc_data.gen_mini_batches('train', args.batch_size, pad_id, vocab, shuffle=True)
                 train_reader = read_multiple(train_reader, dev_count)
                 log_every_n_batch, n_batch_loss = args.log_interval, 0
                 total_num, total_loss = 0, 0

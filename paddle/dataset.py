@@ -42,79 +42,86 @@ class BRCDataset(object):
         self.max_p_num = max_p_num
         self.max_p_len = max_p_len
         self.max_q_len = max_q_len
+        self.train_files = train_files
+        self.dev_files = dev_files
+        self.test_files = test_files
 
-        self.train_set, self.dev_set, self.test_set = [], [], []
+        self.train_set, self.dev_set, self.test_set = None, None, None
         if train_files:
-            for train_file in train_files:
-                self.train_set += self._load_dataset(train_file, train=True)
-            self.logger.info('Train set size: {} questions.'.format(
-                len(self.train_set)))
+            self.train_set = self._load_dataset(train_files, train=True)
+            # self.logger.info('Train set size: {} questions.'.format(
+            #     len(self.train_set)))
 
         if dev_files:
-            for dev_file in dev_files:
-                self.dev_set += self._load_dataset(dev_file)
-            self.logger.info('Dev set size: {} questions.'.format(
-                len(self.dev_set)))
+            self.dev_set = self._load_dataset(dev_files)
+            # self.logger.info('Dev set size: {} questions.'.format(
+            #     len(self.dev_set)))
 
         if test_files:
-            for test_file in test_files:
-                self.test_set += self._load_dataset(test_file)
-            self.logger.info('Test set size: {} questions.'.format(
-                len(self.test_set)))
+            self.test_set = self._load_dataset(test_files)
+            # self.logger.info('Test set size: {} questions.'.format(
+            #     len(self.test_set)))
 
-    def _load_dataset(self, data_path, train=False):
+    def _load_dataset(self, data_files, train=False):
         """
         Loads the dataset
         Args:
-            data_path: the data file to load
+            data_files: list of data files to load
         """
-        with io.open(data_path, 'r', encoding='utf-8') as fin:
-            data_set = []
-            for lidx, line in enumerate(fin):
-                sample = json.loads(line.strip())
-                if train:
-                    if len(sample['answer_spans']) == 0:
-                        continue
-                    if sample['answer_spans'][0][1] >= self.max_p_len:
-                        continue
-
-                if 'answer_docs' in sample:
-                    sample['answer_passages'] = sample['answer_docs']
-
-                sample['question_tokens'] = sample['segmented_question']
-
-                sample['passages'] = []
-                for d_idx, doc in enumerate(sample['documents']):
+        for data_file in data_files:
+            with io.open(data_file, 'r', encoding='utf-8') as fin:
+                for lidx, line in enumerate(fin):
+                    sample = json.loads(line.strip())
                     if train:
-                        most_related_para = doc['most_related_para']
-                        sample['passages'].append({
-                            'passage_tokens':
-                            doc['segmented_paragraphs'][most_related_para],
-                            'is_selected': doc['is_selected']
-                        })
-                    else:
-                        para_infos = []
-                        for para_tokens in doc['segmented_paragraphs']:
-                            question_tokens = sample['segmented_question']
-                            common_with_question = Counter(
-                                para_tokens) & Counter(question_tokens)
-                            correct_preds = sum(common_with_question.values())
-                            if correct_preds == 0:
-                                recall_wrt_question = 0
-                            else:
-                                recall_wrt_question = float(
-                                    correct_preds) / len(question_tokens)
-                            para_infos.append((para_tokens, recall_wrt_question,
-                                               len(para_tokens)))
-                        para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        fake_passage_tokens = []
-                        for para_info in para_infos[:1]:
-                            fake_passage_tokens += para_info[0]
-                        sample['passages'].append({
-                            'passage_tokens': fake_passage_tokens
-                        })
-                data_set.append(sample)
-        return data_set
+                        if len(sample['answer_spans']) == 0:
+                            continue
+                        if sample['answer_spans'][0][1] >= self.max_p_len:
+                            continue
+
+                    if 'answer_docs' in sample:
+                        sample['answer_passages'] = sample['answer_docs']
+
+                    sample['question_tokens'] = sample['segmented_question']
+
+                    sample['passages'] = []
+                    for d_idx, doc in enumerate(sample['documents']):
+                        if train:
+                            most_related_para = doc['most_related_para']
+                            sample['passages'].append({
+                                'passage_tokens':
+                                doc['segmented_paragraphs'][most_related_para],
+                                'is_selected': doc['is_selected']
+                            })
+                        else:
+                            most_related_para = doc['most_related_para']
+                            sample['passages'].append(
+                                {'passage_tokens': doc['segmented_paragraphs'][most_related_para]}
+                            )
+                    yield sample
+
+    def _reset_dataset(self, set_name):
+        """reset dataset after each epoch"""
+        # shuffle dataset before re-loading
+        if set_name == 'train':
+            for filename in self.train_files:
+                def _system_run(cmd):
+                    self.logger.info("System command beginning: {}".format(cmd))
+                    os.system(cmd)
+                    self.logger.info("System command endding: {}".format(cmd))
+
+                # shuf into .shuffle
+                _system_run("shuf {0} -o {0}.shuffle".format(filename))
+                # mv back into file
+                _system_run("mv {0}.shuffle {0}".format(filename))
+
+        if set_name == 'train':
+            self.train_set = self._load_dataset(self.train_files, True)
+        elif set_name == 'dev':
+            self.dev_set = self._load_dataset(self.dev_files, False)
+        elif set_name == 'test':
+            self.test_set = self._load_dataset(self.test_files, False)
+        else:
+            raise RuntimeError
 
     def _one_mini_batch(self, data, indices, pad_id):
         """
@@ -181,7 +188,7 @@ class BRCDataset(object):
             a generator
         """
         if set_name is None:
-            data_set = self.train_set + self.dev_set + self.test_set
+            data_set = self._load_dataset(self.train_files + self.dev_files + self.test_files)
         elif set_name == 'train':
             data_set = self.train_set
         elif set_name == 'dev':
@@ -205,23 +212,16 @@ class BRCDataset(object):
         Args:
             vocab: the vocabulary on this dataset
         """
-        for data_set in [self.train_set, self.dev_set, self.test_set]:
-            if data_set is None:
-                continue
-            for sample in data_set:
-                sample['question_token_ids'] = vocab.convert_to_ids(sample[
-                    'question_tokens'])
-                for passage in sample['passages']:
-                    passage['passage_token_ids'] = vocab.convert_to_ids(passage[
-                        'passage_tokens'])
+        pass
 
-    def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
+    def gen_mini_batches(self, set_name, batch_size, pad_id, vocab, shuffle=True):
         """
         Generate data batches for a specific dataset (train/dev/test)
         Args:
             set_name: train/dev/test to indicate the set
             batch_size: number of samples in one batch
             pad_id: pad id
+            vocab: vocabulary
             shuffle: if set to be true, the data is shuffled.
         Returns:
             a generator for all batches
@@ -235,10 +235,22 @@ class BRCDataset(object):
         else:
             raise NotImplementedError('No data set named as {}'.format(
                 set_name))
-        data_size = len(data)
-        indices = np.arange(data_size)
-        if shuffle:
-            np.random.shuffle(indices)
-        for batch_start in np.arange(0, data_size, batch_size):
-            batch_indices = indices[batch_start:batch_start + batch_size]
-            yield self._one_mini_batch(data, batch_indices, pad_id)
+
+        batch_data_set = []
+        for sample in data:
+            if len(batch_data_set) > 0 and len(batch_data_set) == batch_size:
+                batch_indices = np.arange(batch_size)
+                yield self._one_mini_batch(batch_data_set, batch_indices, pad_id)
+                batch_data_set = []
+            sample['question_token_ids'] = \
+                vocab.convert_to_ids(sample['question_tokens'])
+            for passage in sample['passages']:
+                passage['passage_token_ids'] = \
+                    vocab.convert_to_ids(passage['passage_tokens'])
+            batch_data_set.append(sample)
+
+        if len(batch_data_set) > 0:
+            batch_indices = np.arange(len(batch_data_set))
+            yield self._one_mini_batch(batch_data_set, batch_indices, pad_id)
+
+        self._reset_dataset(set_name)
