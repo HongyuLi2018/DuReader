@@ -236,6 +236,8 @@ class BRCDataset(object):
             raise NotImplementedError('No data set named as {}'.format(
                 set_name))
 
+        self._reset_dataset(set_name)
+
         batch_data_set = []
         for sample in data:
             if len(batch_data_set) > 0 and len(batch_data_set) == batch_size:
@@ -253,4 +255,3 @@ class BRCDataset(object):
             batch_indices = np.arange(len(batch_data_set))
             yield self._one_mini_batch(batch_data_set, batch_indices, pad_id)
 
-        self._reset_dataset(set_name)
